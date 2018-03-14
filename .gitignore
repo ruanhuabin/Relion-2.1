@@ -1,1 +1,5 @@
 external/
+cscope*
+build*
+*.swp
+tags

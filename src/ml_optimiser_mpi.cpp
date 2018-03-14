@@ -25,6 +25,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+//Add by huabin
+extern size_t projectTimes;
+extern size_t compareTimes;
+float totalRunSecs2 = 0.0f;
+
 
 //#define PRINT_GPU_MEM_INFO
 
@@ -709,8 +714,35 @@ void MlOptimiserMpi::calculateSumOfPowerSpectraAndAverageImage(MultidimArray<RFL
 
 }
 
+int timeval_subtract2 (struct timeval *result, struct timeval *x, struct timeval *y)
+{
+  /* Perform the carry for the later subtraction by updating y. */
+  if (x->tv_usec < y->tv_usec) {
+    int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
+    y->tv_usec -= 1000000 * nsec;
+    y->tv_sec += nsec;
+  }
+  if (x->tv_usec - y->tv_usec > 1000000) {
+    int nsec = (x->tv_usec - y->tv_usec) / 1000000;
+    y->tv_usec += 1000000 * nsec;
+    y->tv_sec -= nsec;
+  }
+
+
+  result->tv_sec = x->tv_sec - y->tv_sec;
+  result->tv_usec = x->tv_usec - y->tv_usec;
+
+  /* Return 1 if result is negative. */
+  return x->tv_sec < y->tv_sec;
+}
+
+
 void MlOptimiserMpi::expectation()
 {
+
+    //add by huabin
+    struct timeval start, stop, timeElapse;
+    gettimeofday(&start, NULL);
 #ifdef TIMING
 		timer.tic(TIMING_EXP_1);
 #endif
@@ -1067,7 +1099,7 @@ void MlOptimiserMpi::expectation()
         			std::cout << " Expectation iteration " << iter;
         			if (!do_auto_refine)
         				std::cout << " of " << nr_iter;
-        			std::cout << std::endl;
+        			std::cout << " huabin's flag" <<std::endl;
         			init_progress_bar(mydata.numberOfOriginalParticles());
         		}
         	}
@@ -1494,6 +1526,39 @@ void MlOptimiserMpi::expectation()
 #ifdef DEBUG
 	std::cerr << "MlOptimiserMpi::expectation: done" << std::endl;
 #endif
+
+
+    gettimeofday(&stop, NULL);
+    timeval_subtract2(&timeElapse, &stop, &start);
+    float totalRunSecs2 = (float)timeElapse.tv_sec + (float)timeElapse.tv_usec / (float)1000000;
+    //char fileName[128];
+    //sprintf(fileName, "%s/relion_time_rank_%d.txt", fn_out.beforeLastOf("/").c_str(), node->rank);
+    //FILE *f = fopen(fileName, "a");
+    //char buffer[512];
+    //sprintf(buffer, "[RELION]:  Iter: %d, Rank: %d, projectTimes = %lu, compareTimes = %lu  ", iter, node->rank, projectTimes, compareTimes);
+    //fprintf(f, "%s", buffer);
+    //sprintf(buffer, "Total Times: %f\n", totalRunSecs2);
+    //fprintf(f, "%s", buffer);
+    //fclose(f);
+
+    //std::cerr << "MlOptimiserMpi::expectation: done by rank " << node->rank <<std::endl;
+
+
+    static bool isFirstWrite = true;
+    char fileName[128];
+    char buffer[512];
+    sprintf(fileName, "%s/relion_time_rank_%d.txt", fn_out.beforeLastOf("/").c_str(), node->rank);
+    FILE *f = fopen(fileName, "a");
+    if(isFirstWrite)
+    {
+        isFirstWrite = false;
+        sprintf(buffer, "%-6s %-20s %-20s %-20s\n", "Iter", "ProjectTimes", "CompareTimes", "Total Times(seconds)");
+        fprintf(f, "%s", buffer);
+    }
+
+    sprintf(buffer, "%-6d %-20lu %-20lu %-20.2f\n", iter, projectTimes, compareTimes, totalRunSecs2);
+    fprintf(f, "%s", buffer);
+    fclose(f);
 
 }
 

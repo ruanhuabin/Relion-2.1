@@ -43,6 +43,7 @@
 #include "src/macros.h"
 #include "src/error.h"
 #include "src/ml_optimiser.h"
+#include "mpi.h"
 #ifdef CUDA
 #include "src/gpu_utils/cuda_ml_optimiser.h"
 #endif
@@ -55,6 +56,10 @@ static pthread_mutex_t global_mutex = PTHREAD_MUTEX_INITIALIZER;
 Barrier * global_barrier;
 ThreadManager * global_ThreadManager;
 
+//Add by huabin
+size_t projectTimes = 0;
+size_t compareTimes = 0;
+float totalRunSecs = 0.0f;
 /** ========================== Threaded parallelization of expectation === */
 
 void globalThreadExpectationSomeParticles(ThreadArgument &thArg)
@@ -2367,8 +2372,36 @@ void MlOptimiser::iterate()
 	iterateWrapUp();
 }
 
+int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y)
+{
+  /* Perform the carry for the later subtraction by updating y. */
+  if (x->tv_usec < y->tv_usec) {
+    int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
+    y->tv_usec -= 1000000 * nsec;
+    y->tv_sec += nsec;
+  }
+  if (x->tv_usec - y->tv_usec > 1000000) {
+    int nsec = (x->tv_usec - y->tv_usec) / 1000000;
+    y->tv_usec += 1000000 * nsec;
+    y->tv_sec -= nsec;
+  }
+
+
+  result->tv_sec = x->tv_sec - y->tv_sec;
+  result->tv_usec = x->tv_usec - y->tv_usec;
+
+  /* Return 1 if result is negative. */
+  return x->tv_sec < y->tv_sec;
+}
+
+
 void MlOptimiser::expectation()
 {
+    int rank;
+    MPI_Comm_rank (MPI_COMM_WORLD, &rank);
+	std::cerr << "Expectation: start  by rank: " << rank <<std::endl;
+    struct timeval start, stop, timeElapse;
+    gettimeofday(&start, NULL);
 
 //#define DEBUG_EXP
 #ifdef DEBUG_EXP
@@ -2521,7 +2554,7 @@ void MlOptimiser::expectation()
 			std::cout << " Expectation iteration " << iter;
 			if (!do_auto_refine)
 				std::cout << " of " << nr_iter;
-			std::cout << std::endl;
+			std::cout << "  huabin's flag" <<std::endl;
 			init_progress_bar(nr_particles_todo);
 		}
 	}
@@ -2654,6 +2687,22 @@ void MlOptimiser::expectation()
 #ifdef DEBUG_EXP
 	std::cerr << "Expectation: done " << std::endl;
 #endif
+
+    gettimeofday(&stop, NULL);
+    timeval_subtract(&timeElapse, &stop, &start);
+    float totalRunSecs = (float)timeElapse.tv_sec + (float)timeElapse.tv_usec / (float)1000000;
+    char fileName[128];
+    sprintf(fileName, "/tmp/relion_time_rank_%d.txt", rank);
+    FILE *f = fopen(fileName, "a");
+    char buffer[512];
+    sprintf(buffer, "Iter: %d, Rank: %d, projectTimes = %lu, compareTimes = %lu  ", nr_iter, rank, projectTimes, compareTimes);
+    fprintf(f, "%s", buffer);
+    sprintf(buffer, "Total Times: %f\n", totalRunSecs);
+    fprintf(f, "%s", buffer);
+    fclose(f);
+
+
+	std::cerr << "Expectation: done  by rank: " << rank <<std::endl;
 
 }
 
@@ -5448,6 +5497,7 @@ void MlOptimiser::getAllSquaredDifferences(long int my_ori_particle, int ibody, 
 								long int ihidden = iorientclass * exp_nr_trans;
 								for (long int itrans = exp_itrans_min; itrans <= exp_itrans_max; itrans++, ihidden++)
 								{
+                                    compareTimes ++;
 #ifdef DEBUG_CHECKSIZES
 									if (exp_ipass > 0 && ihidden >= XSIZE(exp_Mcoarse_significant))
 									{
@@ -6542,6 +6592,10 @@ void MlOptimiser::storeWeightedSums(long int my_ori_particle, int ibody, int exp
 							}
 							else
 								(mymodel.PPref[exp_iclass]).get2DFourierTransform(Fref, A, IS_NOT_INV);
+
+
+                            //add by huabin
+                            projectTimes ++;
 						}
 #ifdef TIMING
 						// Only time one thread, as I also only time one MPI process
